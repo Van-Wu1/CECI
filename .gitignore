@@ -1,3 +1,4 @@
 /cache
 /package-lock.json
-/scr
+/scr/data
+/scr/py/cache
