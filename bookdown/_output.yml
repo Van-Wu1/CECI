@@ -1,7 +1,0 @@
-bookdown::pdf_book:
-  latex_engine: xelatex
-  citation_package: natbib
-  keep_tex: yes
-  toc: true
-  number_sections: true
-  fig_caption: true
