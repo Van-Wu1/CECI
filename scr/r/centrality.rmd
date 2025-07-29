@@ -1,0 +1,134 @@
+```{r}
+remove.packages("cppRouting")
+
+
+```
+```{r}
+install.packages(c("igraph", "cppRouting", "sf", "tidyverse"))
+```
+
+```{r}
+library(sf)
+library(tidyverse)
+library(cppRouting)
+find.package("cppRouting")
+
+```
+
+```{r}
+edge_path <- "london_edges.geojson"
+edges <- st_read(edge_path)
+
+# 如果需要的话，可以读入节点文件备用
+# node_path <- "../data/Roads/london_nodes.geojson"
+# nodes <- st_read(node_path)
+
+names(edges)
+```
+
+```{r}
+# 构建 cppRouting 网络对象
+# 需提供 from, to, weight 三列（通常使用 edge 长度）
+rnet <- fastgraph(
+  from = edges$u,
+  to = edges$v,
+  d = edges$length,
+  directed = FALSE
+)
+
+# 查看网络基本信息
+summary(rnet)
+```
+
+```{r}
+# 获取所有最短路径（节点数太大会很慢）
+# shortest_paths_matrix <- get_distance_matrix(rnet)
+
+# 使用 edge_betweenness 函数计算边介数中心性（推荐方式）
+eb <- edge_betweenness(rnet, algo = "unweighted")
+
+# 合并结果到 edges（顺序和 edges 行一致）
+edges$edge_betweenness <- eb
+```
+
+```{r}
+# 保存新结果
+st_write(edges, "../data/Outputs/london_edges_cpp_betweenness.geojson", delete_dsn = TRUE)
+```
+
+```{r}
+# 可视化：边介数中心性分布
+library(ggplot2)
+ggplot(edges %>% st_drop_geometry(), aes(x = edge_betweenness)) +
+  geom_histogram(bins = 50, fill = "#1f77b4", color = "white") +
+  theme_minimal() +
+  labs(title = "Edge Betweenness Centrality (cppRouting)", x = "Betweenness", y = "Count")
+```
+
+
+
+```{r}
+
+if (!require("remotes")) install.packages("remotes")
+remotes::install_github("RcppSM/cppRouting")
+
+
+```
+
+```{r}
+library(sf)
+library(tidyverse)
+library(cppRouting)
+find.package("cppRouting")
+
+```
+
+```{r}
+edge_path <- "../data/Roads/london_edges.geojson"
+edges <- st_read(edge_path)
+
+# 如果需要的话，可以读入节点文件备用
+# node_path <- "../data/Roads/london_nodes.geojson"
+# nodes <- st_read(node_path)
+
+names(edges)
+```
+
+```{r}
+# 构建 cppRouting 网络对象
+# 需提供 from, to, weight 三列（通常使用 edge 长度）
+rnet <- fastgraph(
+  from = edges$u,
+  to = edges$v,
+  d = edges$length,
+  directed = FALSE
+)
+
+# 查看网络基本信息
+summary(rnet)
+```
+
+```{r}
+# 获取所有最短路径（节点数太大会很慢）
+# shortest_paths_matrix <- get_distance_matrix(rnet)
+
+# 使用 edge_betweenness 函数计算边介数中心性（推荐方式）
+eb <- edge_betweenness(rnet, algo = "unweighted")
+
+# 合并结果到 edges（顺序和 edges 行一致）
+edges$edge_betweenness <- eb
+```
+
+```{r}
+# 保存新结果
+st_write(edges, "../data/Outputs/london_edges_cpp_betweenness.geojson", delete_dsn = TRUE)
+```
+
+```{r}
+# 可视化：边介数中心性分布
+library(ggplot2)
+ggplot(edges %>% st_drop_geometry(), aes(x = edge_betweenness)) +
+  geom_histogram(bins = 50, fill = "#1f77b4", color = "white") +
+  theme_minimal() +
+  labs(title = "Edge Betweenness Centrality (cppRouting)", x = "Betweenness", y = "Count")
+```
