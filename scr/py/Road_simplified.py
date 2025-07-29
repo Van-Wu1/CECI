@@ -11,7 +11,7 @@ custom_filter = (
     '["highway"]["area"!~"yes"]'
     '["highway"!~"abandoned|bus_guideway|construction|corridor|elevator|escalator|footway|'
     'motor|no|planned|platform|proposed|raceway|razed|steps"]'
-    '["bicycle"!~"no"]["service"!~"private"]'
+    '["bicycle"!~"no"]["access"!~"private"]'
 )
 
 # === 3. 下载骑行网络 ===
@@ -44,10 +44,10 @@ for field in fields_to_fix:
     if field in edges.columns:
         edges[field] = edges[field].astype(str)
 
-# 8. 导出图结构和边文件
-ox.save_graphml(G, "london_bike_cleaned.graphml")  # ✅ 保存为可复用的图
-# edges.to_file("london_edges_FIXED.geojson", driver="GeoJSON")  # ✅ 保存为修复字段后的 GeoJSON
+# 8. 导出图结构和边文件（只保留一个gpkg）
+# ox.save_graphml(G, "london_bike_cleaned.graphml")
+# edges.to_file("london_edges_FIXED.geojson", driver="GeoJSON") 
 edges.to_file("london_edges_FIXED.gpkg", layer='edges', driver="GPKG")
 
 
-print("✅ 导出完成：字段修复 + graphml + geojson 全部生成！")
+print("导出完成：字段修复 + graphml + geojson 全部生成！")
