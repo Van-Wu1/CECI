@@ -2,24 +2,25 @@ import osmnx as ox
 import geopandas as gpd
 import networkx as nx
 
-# === 1. 获取 Greater London 边界 ===
+# 获取 Greater London 边界
 place_name = "Greater London, United Kingdom"
 gdf = ox.geocode_to_gdf(place_name)
 
-# === 2. 自定义过滤器：允许骑行的道路 ===
+# 自定义过滤器：允许骑行的道路
 custom_filter = (
     '["highway"]["area"!~"yes"]'
     '["highway"!~"abandoned|bus_guideway|construction|corridor|elevator|escalator|footway|'
     'motor|no|planned|platform|proposed|raceway|razed|steps"]'
-    '["bicycle"!~"no"]["access"!~"private"]'
+    '["bicycle"!~"no"]'
 )
 
-# === 3. 下载骑行网络 ===
+
+# 下载骑行网络
 print("正在抓取骑行网络数据（超级慢）...")
 graph = ox.graph_from_polygon(gdf.geometry[0], custom_filter=custom_filter, simplify=True)
 G = graph
 
-# === 4. 清洗图结构：最大连通分量 + 转无向图 ===
+# 清洗图结构：最大连通分量 + 转无向图
 if G.is_directed():
     comps = nx.weakly_connected_components(G)
 else:
@@ -50,4 +51,4 @@ for field in fields_to_fix:
 edges.to_file("london_edges_FIXED.gpkg", layer='edges', driver="GPKG")
 
 
-print("导出完成：字段修复 + graphml + geojson 全部生成！")
+print("导出完成")
