@@ -32,18 +32,18 @@ G = G.subgraph(largest_cc).copy().to_undirected()
 deadends = [n for n in G.nodes if G.degree[n] == 1]
 G.remove_nodes_from(deadends)
 
-# === 6. 删除长度 <10m 的边 ===
+# 删除长度 <10m 的边
 short_edges = [(u, v, k) for u, v, k, d in G.edges(keys=True, data=True) if d.get("length", 0) < 10]
 G.remove_edges_from(short_edges)
 
-# 6. 转为 GeoDataFrame
+# 转为 GeoDataFrame
 nodes, edges = ox.graph_to_gdfs(G)
 
-# 7. 修复字段类型，避免被 GeoPandas 吃掉
-fields_to_fix = ['highway', 'name', 'ref', 'bridge', 'tunnel', 'service', 'maxspeed', 'lanes', 'est_width']
-for field in fields_to_fix:
-    if field in edges.columns:
-        edges[field] = edges[field].astype(str)
+# 修复字段类型，避免被 GeoPandas 吃掉
+# fields_to_fix = ['highway', 'name', 'ref', 'bridge', 'tunnel', 'service', 'maxspeed', 'lanes', 'est_width']
+# for field in fields_to_fix:
+#     if field in edges.columns:
+#         edges[field] = edges[field].astype(str)
 
 # 8. 导出图结构和边文件（只保留一个gpkg）
 # ox.save_graphml(G, "london_bike_cleaned.graphml")
