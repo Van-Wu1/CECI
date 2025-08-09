@@ -21,7 +21,7 @@ importlib.reload(p)
 import definitions as d
 importlib.reload(d)
 
-from beta_slope_factor import apply_slope_factor
+from scr.py.recyclingbin.beta_slope_factor import apply_slope_factor
 
 
 #-------------------------
