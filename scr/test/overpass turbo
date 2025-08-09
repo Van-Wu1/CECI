@@ -1,0 +1,44 @@
+[out:json]
+[bbox:51.5072,-0.0965,51.5175,-0.0750];
+//[bbox:{{bbox}}];
+(
+  way["highway"="cycleway"];
+  way["highway"="path"]["bicycle"!="no"]["bicycle"!="dismount"];
+  way["highway"="footway"]["bicycle"="yes"];
+  way["highway"="footway"]["bicycle"="designated"];
+  way["highway"="footway"]["bicycle"="permissive"];
+  way["highway"="bridleway"]["bicycle"="yes"];
+  way["highway"="bridleway"]["bicycle"="designated"];
+  way["highway"="bridleway"]["bicycle"="permissive"];
+  way["highway"="steps"]["bicycle"="yes"];
+  way["highway"="steps"]["bicycle"="designated"];
+  way["highway"="steps"]["bicycle"="permissive"];
+
+  way["highway"="motorway"];
+  way["highway"="motorway_link"];
+  way["highway"="trunk"];
+  way["highway"="trunk_link"];
+
+  way["highway"="primary"];
+  way["highway"="primary_link"];
+  way["highway"="secondary"];
+  way["highway"="secondary_link"];
+  way["highway"="tertiary"];
+  way["highway"="tertiary_link"];
+  way["highway"="unclassified"];
+  way["highway"="residential"];
+  way["highway"="living_street"];
+  way["highway"="pedestrian"];
+  way["highway"="road"];
+
+  way["highway"="service"][!"service"];
+  way["highway"="service"]["service"="alley"];
+  way["highway"="service"]["bicycle"="yes"];
+  way["highway"="service"]["bicycle"="designated"];
+  way["highway"="service"]["bicycle"="permissive"];
+  way["highway"="track"];
+);
+// print results
+out body;
+>;
+out skel qt;
