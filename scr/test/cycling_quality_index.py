@@ -21,8 +21,6 @@ importlib.reload(p)
 import definitions as d
 importlib.reload(d)
 
-from scr.py.recyclingbin.beta_slope_factor import apply_slope_factor
-
 
 #-------------------------
 #      Script Start
@@ -1505,23 +1503,9 @@ else:
                     if fac_maxspeed <= 0.7:
                         data_malus = d.addDelimitedValue(data_malus, 'along a road with high speed limits')
 
-                #factor 3: slope (separation and buffer)
-                # fac_3 = 1
-                # layer.changeAttributeValue(feature.id(), id_fac_3, round(fac_3, 2))
-                # factor 3: slope (由 apply_slope_factor 计算结果)
-                fac_3_val = feature['fac_3']
-                fac_3 = 1.0 if fac_3_val is None else float(fac_3_val)
+                #factor 3: slope (separation and buffer) 这一块现在单独用python计算
 
-                # layer = iface.activeLayer()  # 你的道路图层
-                apply_slope_factor(
-                    roads_layer=layer,
-                    slope_raster= project_dir + "data/slope.tif",
-                    id_field="id",
-                    target_crs_epsg="EPSG:27700",
-                    sample_interval_m=20,
-                    slope_unit="degree",
-                    stat_choice="q3"
-                )
+
 
                 #factor group 4: miscellaneous attributes can result in an other bonus or malus
                 fac_4 = 1
@@ -1587,6 +1571,8 @@ else:
 
                 layer.changeAttributeValue(feature.id(), id_fac_4, round(fac_4, 2))
 
+
+                # 这里是总函数
                 index = base_index * fac_1 * fac_2 * fac_3 * fac_4
 
                 index = max(min(100, index), 0) #index should be between 0 and 100 in the end for pragmatic reasons
