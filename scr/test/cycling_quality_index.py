@@ -4,8 +4,8 @@ from os.path import exists
 #project directory 设置一下文件路径
 from console.console import _console
 project_dir = os.path.dirname(_console.console.tabEditorWidget.currentWidget().path) + '/'
-dir_input = project_dir + 'data/6export_converted'
-dir_output = project_dir + 'data/6cycling_quality_index'
+dir_input = project_dir + 'data/export_converted1'
+dir_output = project_dir + 'data/slope_export_test'
 file_format = '.geojson'
 multi_input = False 
 #if "True", it's possible to merge different import files stored in the input directory, marked with an ascending number starting with 1 at the end of the filename (e.g. way_import1.geojson, way_import2.geojson etc.) - can be used to process different areas at the same time or to process a larger area that can't be downloaded in one file
@@ -21,7 +21,7 @@ importlib.reload(p)
 import definitions as d
 importlib.reload(d)
 
-from slope_factor import apply_slope_factor
+from beta_slope_factor import apply_slope_factor
 
 
 #-------------------------
@@ -112,7 +112,6 @@ else:
     'fac_2': 'Double',
     'fac_3': 'Double',
     'fac_4': 'Double',
-    'fac_5': 'Double',
     'data_bonus': 'String',
     'data_malus': 'String',
     'data_incompleteness': 'Double',
@@ -187,7 +186,6 @@ else:
     id_fac_2 = layer.fields().indexOf('fac_2')
     id_fac_3 = layer.fields().indexOf('fac_3')
     id_fac_4 = layer.fields().indexOf('fac_4')
-    id_fac_5 = layer.fields().indexOf('fac_5')
     id_data_bonus = layer.fields().indexOf('data_bonus')
     id_data_malus = layer.fields().indexOf('data_malus')
     id_data_incompleteness = layer.fields().indexOf('data_incompleteness')
@@ -1507,9 +1505,23 @@ else:
                     if fac_maxspeed <= 0.7:
                         data_malus = d.addDelimitedValue(data_malus, 'along a road with high speed limits')
 
-                #factor 3: separation and buffer
-                fac_3 = 1
-                layer.changeAttributeValue(feature.id(), id_fac_3, round(fac_3, 2))
+                #factor 3: slope (separation and buffer)
+                # fac_3 = 1
+                # layer.changeAttributeValue(feature.id(), id_fac_3, round(fac_3, 2))
+                # factor 3: slope (由 apply_slope_factor 计算结果)
+                fac_3_val = feature['fac_3']
+                fac_3 = 1.0 if fac_3_val is None else float(fac_3_val)
+
+                # layer = iface.activeLayer()  # 你的道路图层
+                apply_slope_factor(
+                    roads_layer=layer,
+                    slope_raster= project_dir + "data/slope.tif",
+                    id_field="id",
+                    target_crs_epsg="EPSG:27700",
+                    sample_interval_m=20,
+                    slope_unit="degree",
+                    stat_choice="q3"
+                )
 
                 #factor group 4: miscellaneous attributes can result in an other bonus or malus
                 fac_4 = 1
@@ -1575,20 +1587,7 @@ else:
 
                 layer.changeAttributeValue(feature.id(), id_fac_4, round(fac_4, 2))
 
-                
-                fac_5 = 1
-                layer = apply_slope_factor(
-                    roads_layer=layer,
-                    slope_raster = project_dir + 'data/slope.tif',
-                    id_field="id",                                 # 用于回拼接的唯一键
-                    target_crs_epsg="EPSG:27700",                  # 换成你的米制CRS（确保与DEM一致）
-                    sample_interval_m=20,                          # 采样间隔，想更快可以先设 30
-                    slope_unit="degree",                           # 你的坡度单位（"degree" 或 "percent"）
-                    stat_choice="q3",                              # slope代表值：q3 / max / mean
-                    overwrite=False
-                )
-                
-                index = base_index * fac_1 * fac_2 * fac_3 * fac_4 * fac_5
+                index = base_index * fac_1 * fac_2 * fac_3 * fac_4
 
                 index = max(min(100, index), 0) #index should be between 0 and 100 in the end for pragmatic reasons
                 index = int(round(index))       #index is an int

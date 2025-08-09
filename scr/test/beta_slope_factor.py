@@ -1,254 +1,224 @@
-
-# -*- coding: utf-8 -*-
-"""
-slope_factor.py
-----------------
-PyQGIS helper to compute a slope-based factor (fac_5) for road line layers
-using a slope raster (e.g., degrees or %). Designed to be imported by your
-main CQI script.
-
-Usage (inside QGIS Python or your script):
------------------------------------------
-from slope_factor import apply_slope_factor
-
-layer_with_fac5 = apply_slope_factor(
-    roads_layer=layer,                       # QgsVectorLayer (LineString)
-    slope_raster="/path/to/slope.tif",       # slope tif
-    id_field="id",                           # key to join back; will be created if None
-    target_crs_epsg="EPSG:27700",            # must match your metric/DEM CRS
-    sample_interval_m=20,                    # sampling spacing along lines
-    slope_unit="degree",                     # "degree" or "percent"
-    stat_choice="q3",                        # "q3" | "max" | "mean"
-    overwrite=False                          # if True, overwrite fac_5/proc_slope
-)
-
-Notes:
-- If your DEM is in degrees but you want percent, conversion is applied.
-- If Q3 is not available in your QGIS version, it will fall back to "max".
-- Returns a new memory layer with fields: proc_slope, fac_5 appended.
-"""
-
-from math import tan, radians
-from typing import Optional
-
 from qgis.core import (
-    QgsVectorLayer, QgsRasterLayer, QgsCoordinateReferenceSystem,
-    QgsField, QgsProject, QgsProperty, QgsProcessingFeatureSourceDefinition, edit
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
+    QgsFeature,
+    QgsVectorLayer,
+    QgsRasterLayer,
+    QgsWkbTypes,
+    QgsProject,
+    QgsPointXY,
+    QgsField,
+    edit,
 )
 from PyQt5.QtCore import QVariant
-import processing
+
+import statistics
 
 
-
-def _ensure_field(layer: QgsVectorLayer, name: str, qvariant_type: QVariant.Type) -> int:
-    if layer.fields().indexOf(name) == -1:
-        with edit(layer):
-            layer.addAttribute(QgsField(name, qvariant_type))
-            layer.updateFields()
-    return layer.fields().indexOf(name)
-
-
-def _add_segid_if_missing(layer: QgsVectorLayer, id_field: Optional[str]) -> str:
+def densify_layer_by_distance(src_layer, interval_m):
     """
-    Ensure we have a per-feature key to aggregate by.
-    If id_field is None, create 'seg_id' from $id and return 'seg_id'.
+    按固定距离加密几何（等距加点），返回内存图层。
+    不依赖 processing 算法。
     """
-    if id_field and layer.fields().indexOf(id_field) != -1:
-        return id_field
-    # Create seg_id = $id
-    with edit(layer):
-        if layer.fields().indexOf("seg_id") == -1:
-            layer.addExpressionField("$id", QgsField("seg_id", QVariant.Int))
-            layer.updateFields()
-    return "seg_id"
+    crs_auth = src_layer.crs().authid()  # e.g. 'EPSG:27700'
+    wkb = src_layer.wkbType()
+    geom_str = "MultiLineString" if QgsWkbTypes.isMultiType(wkb) else "LineString"
+    mem = QgsVectorLayer(f"{geom_str}?crs={crs_auth}", f"{src_layer.name()}_densified", "memory")
+    prov = mem.dataProvider()
+    prov.addAttributes(src_layer.fields())
+    mem.updateFields()
+
+    feats = []
+    for f in src_layer.getFeatures():
+        g = f.geometry()
+        if not g or g.isEmpty():
+            continue
+        try:
+            dg = g.densifyByDistance(float(interval_m))
+        except Exception:
+            dg = g
+        nf = QgsFeature(mem.fields())
+        nf.setAttributes(f.attributes())
+        nf.setGeometry(dg)
+        feats.append(nf)
+
+    if feats:
+        prov.addFeatures(feats)
+        mem.updateExtents()
+    return mem
 
 
-def _slope_pct(val: float, unit: str) -> float:
-    if val is None:
+from qgis.core import QgsProject, QgsCoordinateTransform, QgsPointXY
+
+def sample_raster_values_at_vertices(line_layer, raster_layer):
+    """
+    沿线每个顶点采样坡度值，返回 {feature_id: [vals]}。
+    使用 line_layer 的 CRS -> raster_layer 的 CRS 做坐标变换。
+    """
+    provider   = raster_layer.dataProvider()
+    raster_crs = raster_layer.crs()
+    src_crs    = line_layer.crs()
+
+    # 用项目的 transform context
+    xform = QgsCoordinateTransform(src_crs, raster_crs, QgsProject.instance()) if src_crs != raster_crs else None
+
+    # nodata（可选）
+    try:
+        nodata = provider.sourceNoDataValue(1)
+    except Exception:
+        nodata = None
+
+    values_dict = {}
+    for feat in line_layer.getFeatures():
+        fid  = feat.id()
+        geom = feat.geometry()
+        vals = []
+        if not geom or geom.isEmpty():
+            values_dict[fid] = vals
+            continue
+
+        for v in geom.vertices():
+            pt = QgsPointXY(v)
+            if xform:
+                try:
+                    pt = xform.transform(pt)
+                except Exception:
+                    continue
+            try:
+                val, ok = provider.sample(pt, 1)   # band=1
+            except Exception:
+                val, ok = (None, False)
+
+            if not ok:
+                continue
+            if nodata is not None and val == nodata:
+                continue
+            try:
+                vals.append(float(val))
+            except (TypeError, ValueError):
+                pass
+
+        values_dict[fid] = vals
+
+    return values_dict
+
+    """
+    沿线每个顶点采样坡度值，返回 {feature_id: [vals]} 字典
+    """
+    if isinstance(target_crs_epsg, str):
+        target_crs_epsg = target_crs_epsg.replace("EPSG:", "").strip()
+    target_crs = QgsCoordinateReferenceSystem.fromEpsgId(int(target_crs_epsg))
+
+    raster_provider = raster_layer.dataProvider()
+    raster_crs = raster_layer.crs()
+    transform = QgsCoordinateTransform(target_crs, raster_crs, raster_layer.dataProvider().transformContext())
+
+    values_dict = {}
+    for feat in line_layer.getFeatures():
+        fid = feat.id()
+        geom = feat.geometry()
+        vals = []
+        for vertex in geom.vertices():
+            pt = transform.transform(vertex)
+            ident = raster_provider.sample(pt, 1)  # band=1
+            if ident[1]:
+                try:
+                    val = float(ident[0])
+                    vals.append(val)
+                except (ValueError, TypeError):
+                    pass
+        values_dict[fid] = vals
+    return values_dict
+
+
+def calc_stat(values, choice="q3"):
+    """
+    根据 choice 计算统计值，choice ∈ {'q3', 'max', 'mean'}
+    """
+    if not values:
         return None
-    if unit.lower().startswith("deg"):
-        return tan(radians(float(val))) * 100.0
-    # assume already percent
-    return float(val)
-
-
-def _map_slope_to_fac5(slope_pct: Optional[float]) -> Optional[float]:
-    if slope_pct is None:
-        return None
-    # Default mapping (you can tweak to your study's needs)
-    # 0–1%: 1.00, 1–3%: 0.95, 3–5%: 0.85, 5–8%: 0.70, 8–10%: 0.50, >10%: 0.30
-    sp = slope_pct
-    if sp <= 1:
-        return 1.00
-    elif sp <= 3:
-        return 0.95
-    elif sp <= 5:
-        return 0.85
-    elif sp <= 8:
-        return 0.70
-    elif sp <= 10:
-        return 0.50
+    if choice == "max":
+        return max(values)
+    elif choice == "mean":
+        return statistics.mean(values)
+    elif choice == "q3":
+        try:
+            return statistics.quantiles(values, n=4)[2]
+        except Exception:
+            return max(values)
     else:
-        return 0.30
+        return max(values)
 
 
 def apply_slope_factor(
-    roads_layer: QgsVectorLayer,
-    slope_raster: str,
-    id_field: Optional[str] = "id",
-    target_crs_epsg: str = "EPSG:27700",
-    sample_interval_m: float = 20.0,
-    slope_unit: str = "degree",
-    stat_choice: str = "q3",
-    overwrite: bool = False
-) -> QgsVectorLayer:
+    roads_layer,
+    slope_raster,
+    id_field,
+    target_crs_epsg,
+    sample_interval_m=20,
+    slope_unit="degree",  # 'degree' or 'percent'
+    stat_choice="q3",
+    overwrite=True
+):
     """
-    Compute fac_5 for roads_layer from slope_raster and return a new memory layer
-    that contains proc_slope (percent) and fac_5 fields.
+    为道路图层计算坡度因子 fac_3 和 proc_slope 字段
     """
+    # 确保坡度栅格是 QgsRasterLayer
+    if isinstance(slope_raster, str):
+        slope_raster = QgsRasterLayer(slope_raster, "slope_raster")
+        if not slope_raster.isValid():
+            raise RuntimeError("坡度栅格无效")
 
-    if not roads_layer or not roads_layer.isValid():
-        raise ValueError("roads_layer is invalid")
+    # 加密几何
+    densified = densify_layer_by_distance(roads_layer, sample_interval_m)
 
-    # Reproject to metric CRS (match your DEM CRS if necessary)
-    roads_m = processing.run(
-        "native:reprojectlayer",
-        {"INPUT": roads_layer, "TARGET_CRS": QgsCoordinateReferenceSystem(target_crs_epsg), "OUTPUT": "memory:"}
-    )["OUTPUT"]
+    # 采样
+    values_dict = sample_raster_values_at_vertices(densified, slope_raster)
 
-    # Slope raster
-    rast = QgsRasterLayer(slope_raster, "slope_raster")
-    if not rast.isValid():
-        raise ValueError("Slope raster is invalid or cannot be opened: %s" % slope_raster)
 
-    # Ensure key
-    key_field = _add_segid_if_missing(roads_m, id_field)
+    # 确保字段存在
+    prov = roads_layer.dataProvider()
+    field_names = [f.name() for f in prov.fields()]
+    if "proc_slope" not in field_names:
+        prov.addAttributes([QgsField("proc_slope", QVariant.Double)])
+    if "fac_3" not in field_names:
+        prov.addAttributes([QgsField("fac_3", QVariant.Double)])
+    roads_layer.updateFields()
 
-    # Densify & extract vertices (sampling points along each line)
-    roads_dens = processing.run(
-        "native:densifygeometriesgivenaninterval",
-        {"INPUT": roads_m, "INTERVAL": float(sample_interval_m), "OUTPUT": "memory:"}
-    )["OUTPUT"]
+    # 回写
+    with edit(roads_layer):
+        for feat in roads_layer.getFeatures():
+            fid = feat.id()
+            vals = values_dict.get(fid, [])
+            slope_val = calc_stat(vals, stat_choice)
+            if slope_val is None:
+                slope_val = 0.0
+                fac_3 = 1.0
+            else:
+                # 如果是角度单位，先转百分比
+                if slope_unit == "degree":
+                    import math
+                    slope_val = math.tan(math.radians(slope_val)) * 100.0
+                fac_3 = slope_to_factor(slope_val)
+            roads_layer.changeAttributeValue(fid, roads_layer.fields().indexFromName("proc_slope"), round(slope_val, 2))
+            roads_layer.changeAttributeValue(fid, roads_layer.fields().indexFromName("fac_3"), round(fac_3, 2))
 
-    pts = processing.run(
-        "native:extractvertices",
-        {"INPUT": roads_dens, "OUTPUT": "memory:"}
-    )["OUTPUT"]
+    return roads_layer
 
-    # Bring key field onto points via spatial join (intersects)
-    pts = processing.run(
-        "native:joinattributesbylocation",
-        {
-            "INPUT": pts,
-            "JOIN": roads_dens,
-            "PREDICATE": [0],  # Intersects
-            "JOIN_FIELDS": [key_field],
-            "METHOD": 0,
-            "DISCARD_NONMATCHING": True,
-            "PREFIX": "",
-            "OUTPUT": "memory:",
-        }
-    )["OUTPUT"]
 
-    # Sample raster value at points
-    pts_samp = processing.run(
-        "qgis:rastersampling",
-        {"INPUT": pts, "RASTERCOPY": rast, "COLUMN_PREFIX": "slp_", "OUTPUT": "memory:"}
-    )["OUTPUT"]
-
-    # Aggregate slope stats per key_field
-    # Try to include Q3 if available in your QGIS; else will fall back later.
-    stats_to_use = [2, 6]  # 2=mean, 6=max
-    q3_stat_code = 9  # Q3; not all versions support this
-    try:
-        test = processing.algorithmHelp("qgis:statisticsbycategories")
-        if "9" in test:  # crude check, not bulletproof
-            stats_to_use.append(q3_stat_code)
-    except Exception:
-        # Can't check, will attempt and ignore if fails
-        stats_to_use.append(q3_stat_code)
-
-    stats = processing.run(
-        "qgis:statisticsbycategories",
-        {
-            "INPUT": pts_samp,
-            "CATEGORIES_FIELD_NAME": [key_field],
-            "VALUES_FIELD_NAME": "slp_1",
-            "STATISTICS": stats_to_use,
-            "OUTPUT": "memory:"
-        }
-    )["OUTPUT"]
-
-    # Join stats back to the densified lines
-    join_fields = []
-    for cand in ["mean", "max", "q3"]:
-        fname = f"slp_1_{cand}"
-        if stats.fields().indexOf(fname) != -1:
-            join_fields.append(fname)
-
-    roads_stats = processing.run(
-        "native:joinattributestable",
-        {
-            "INPUT": roads_dens,
-            "FIELD": key_field,
-            "INPUT_2": stats,
-            "FIELD_2": key_field,
-            "FIELDS_TO_COPY": join_fields,
-            "METHOD": 1,
-            "DISCARD_NONMATCHING": False,
-            "PREFIX": "",
-            "OUTPUT": "memory:"
-        }
-    )["OUTPUT"]
-
-    # Compute proc_slope (%), fac_5
-    proc_idx = _ensure_field(roads_stats, "proc_slope", QVariant.Double)
-    fac5_idx  = _ensure_field(roads_stats, "fac_5", QVariant.Double)
-
-    # Choose representative stat field
-    rep_field = None
-    preferred = {
-        "q3": "slp_1_q3",
-        "max": "slp_1_max",
-        "mean": "slp_1_mean"
-    }
-    # Try preferred then fallbacks
-    for key in [stat_choice, "q3", "max", "mean"]:
-        cand = preferred.get(key)
-        if cand and roads_stats.fields().indexOf(cand) != -1:
-            rep_field = cand
-            break
-
-    if rep_field is None:
-        raise RuntimeError("No slope stats available to map (q3/max/mean missing).")
-
-    with edit(roads_stats):
-        for f in roads_stats.getFeatures():
-            raw = f[rep_field]
-            if raw is None:
-                roads_stats.changeAttributeValue(f.id(), proc_idx, None)
-                roads_stats.changeAttributeValue(f.id(), fac5_idx, None)
-                continue
-            spct = _slope_pct(raw, slope_unit)
-            fac5 = _map_slope_to_fac5(spct)
-            roads_stats.changeAttributeValue(f.id(), proc_idx, round(spct, 2) if spct is not None else None)
-            roads_stats.changeAttributeValue(f.id(), fac5_idx, round(fac5, 2) if fac5 is not None else None)
-
-    # Optional: only append fac_5/proc_slope to the ORIGINAL roads_layer by attribute join
-    result = processing.run(
-        "native:joinattributestable",
-        {
-            "INPUT": roads_layer,
-            "FIELD": key_field if key_field in [f.name() for f in roads_layer.fields()] else "id",
-            "INPUT_2": roads_stats,
-            "FIELD_2": key_field,
-            "FIELDS_TO_COPY": ["proc_slope", "fac_5"],
-            "METHOD": 1,
-            "DISCARD_NONMATCHING": False,
-            "PREFIX": "",
-            "OUTPUT": "memory:"
-        }
-    )["OUTPUT"]
-
-    # If overwrite=False and fields already exist, we keep existing values; if True, this memory result already overwrote.
-    return result
+def slope_to_factor(slope_percent):
+    """
+    将坡度百分比映射为因子（示例规则，可按需调整）
+    """
+    if slope_percent <= 2:
+        return 1.0
+    elif slope_percent <= 4:
+        return 0.9
+    elif slope_percent <= 6:
+        return 0.75
+    elif slope_percent <= 8:
+        return 0.6
+    elif slope_percent <= 10:
+        return 0.45
+    else:
+        return 0.3
