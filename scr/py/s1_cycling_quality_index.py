@@ -4,8 +4,8 @@ from os.path import exists
 #project directory 设置一下文件路径
 from console.console import _console
 project_dir = os.path.dirname(_console.console.tabEditorWidget.currentWidget().path) + '/'
-dir_input = project_dir + 'data/export_converted1'
-dir_output = project_dir + 'data/slope_export_test'
+dir_input = project_dir + 'dataforCQI/9'
+dir_output = project_dir + 'dataforCQI/CQIwithoutslop9'
 file_format = '.geojson'
 multi_input = False 
 #if "True", it's possible to merge different import files stored in the input directory, marked with an ascending number starting with 1 at the end of the filename (e.g. way_import1.geojson, way_import2.geojson etc.) - can be used to process different areas at the same time or to process a larger area that can't be downloaded in one file
@@ -15,10 +15,10 @@ if project_dir not in sys.path:
     sys.path.append(project_dir)
 
 # 这里导入了两个py文件
-import parameter as p
+import s1_parameter as p
 importlib.reload(p)
 
-import definitions as d
+import s1_definitions as d
 importlib.reload(d)
 
 
