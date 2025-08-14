@@ -6,7 +6,7 @@ crs_metric = 'EPSG:27700'
 
 #right or left hand traffic?
 #TODO: left hand traffic not supported yet in most cases
-right_hand_traffic = True
+right_hand_traffic = False
 
 #offset distance for sidepath ways
 #-> use 0 (meter), if no offset is needed, e.g. for better routing analysis
